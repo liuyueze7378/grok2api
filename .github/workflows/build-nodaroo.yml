@@ -1,0 +1,57 @@
+name: Build Grok2API for Nodaroo
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: 'CPU Architecture'
+        required: true
+        default: 'amd64'
+        type: choice
+        options:
+          - amd64
+          - arm64
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Build backend
+        working-directory: backend
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ inputs.arch }} \
+            go build -buildvcs=false -trimpath -ldflags="-s -w" -o ../grok2api ./cmd/grok2api
+
+      - name: Prepare bundle
+        run: |
+          mkdir -p bundle/frontend bundle/data
+          cp grok2api bundle/
+          cp -r frontend/dist bundle/frontend/dist
+          cp VERSION bundle/ 2>/dev/null || true
+          cp config.example.yaml bundle/config.yaml
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok2api-linux-${{ inputs.arch }}
+          path: bundle/
